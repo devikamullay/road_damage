@@ -9,7 +9,7 @@ import requests
 # ----------------------------
 
 # Change this to your hosted model URL if file >1 GB
-MODEL_URL = "https://huggingface.co/yourusername/road-damage-model/resolve/main/yolo11s_trained.pt"
+MODEL_URL = "https://huggingface.co/devikaaaa/yolo11s/resolve/main/yolo11s_trained.pt"
 MODEL_PATH = "yolo11s_trained.pt"
 
 # Download once if not available locally
