@@ -8,21 +8,8 @@ import requests
 # Model setup
 # ----------------------------
 
-# Change this to your hosted model URL if file >1 GB
-MODEL_URL = "https://huggingface.co/devikaaaa/yolo11s/resolve/main/yolo11s_trained.pt"
-MODEL_PATH = "yolo11s_trained.pt"
-
-# Download once if not available locally
-if not os.path.exists(MODEL_PATH):
-    with st.spinner("Downloading model..."):
-        r = requests.get(MODEL_URL, stream=True)
-        with open(MODEL_PATH, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
 # Load YOLO model
-model = YOLO(MODEL_PATH)
+model = YOLO("yolo11s_trained.pt")
 
 # ----------------------------
 # Streamlit UI
