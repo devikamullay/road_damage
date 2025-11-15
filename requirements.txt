@@ -1,0 +1,17 @@
+streamlit
+ultralytics
+torch
+requests
+pillow
+opencv-python
+numpy
+folium
+streamlit-folium
+networkx
+sqlalchemy 
+pymysql
+
+
+
+
+
