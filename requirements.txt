@@ -10,6 +10,7 @@ streamlit-folium
 networkx
 sqlalchemy 
 pymysql
+pymongo[srv]
 
 
 
