@@ -1,38 +1,30 @@
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
+# db_models.py — MongoDB Atlas backend
+
 from datetime import datetime
+from pymongo import MongoClient
+import os
 
-# ----------------------------
-# MySQL connection via XAMPP
-# ----------------------------
-# Adjust user/password/host/dbname to match your setup.
-# Default XAMPP setup (user: root, no password, db: road_damage):
-DATABASE_URL = "mysql+pymysql://root:@localhost:3306/road_damage"
-# If you have a password, e.g. mypass:
-# DATABASE_URL = "mysql+pymysql://root:mypass@localhost:3306/road_damage"
+# -------------------------------------------------------
+# Use Streamlit Secrets (MONGODB_URI) instead of hardcode
+# -------------------------------------------------------
+MONGODB_URI = os.getenv("MONGODB_URI")
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,  # helps avoid stale connections
-)
+if not MONGODB_URI:
+    raise RuntimeError("❌ MONGODB_URI not found. Add it in Streamlit Secrets.")
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Connect to MongoDB Atlas
+client = MongoClient(MONGODB_URI)
 
-Base = declarative_base()
-
-
-class Detection(Base):
-    __tablename__ = "detections"
-
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String(255), nullable=False)
-    lat = Column(Float, nullable=True)
-    lon = Column(Float, nullable=True)
-    damage_count = Column(Integer, nullable=False)
-    avg_conf = Column(Float, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+# Database + Collection
+db = client["road_damage"]              # database name
+detections_collection = db["detections"]  # collection name
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    """Ping database to ensure connection works."""
+    client.admin.command("ping")
 
+
+def save_detection(record: dict):
+    """Insert record into MongoDB."""
+    detections_collection.insert_one(record)
