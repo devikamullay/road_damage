@@ -20,12 +20,26 @@ st.set_page_config(page_title="Road Damage Detection", layout="wide")
 # Helper functions for EXIF / GPS
 # ----------------------------
 
+
 def get_exif_data(img: Image.Image):
-    exif_data = {}
-    info = img._getexif()
+    """
+    Extract EXIF data from a PIL image and return a dict
+    containing at least the GPSInfo block (if present).
+    If the image has no EXIF or _getexif, return None.
+    """
+    # Some formats (e.g. PNG) don't have _getexif at all
+    if not hasattr(img, "_getexif"):
+        return None
+
+    try:
+        info = img._getexif()
+    except Exception:
+        return None
+
     if not info:
         return None
 
+    exif_data = {}
     for tag, value in info.items():
         decoded = ExifTags.TAGS.get(tag, tag)
         if decoded == "GPSInfo":
@@ -34,6 +48,7 @@ def get_exif_data(img: Image.Image):
                 sub_decoded = ExifTags.GPSTAGS.get(t, t)
                 gps_data[sub_decoded] = value[t]
             exif_data["GPSInfo"] = gps_data
+
     return exif_data if exif_data else None
 
 
