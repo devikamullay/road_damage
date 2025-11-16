@@ -1,3 +1,4 @@
+import numpy as np
 import streamlit as st
 from ultralytics import YOLO
 from PIL import Image, ExifTags
@@ -92,35 +93,50 @@ st.title("Road Damage Detection & Visualisation")
 
 if uploaded_file:
     try:
-        pil_img = Image.open(uploaded_file)
+        # Always open + convert strictly to RGB
+        pil_img = Image.open(uploaded_file).convert("RGB")
 
+        # Extract EXIF BEFORE thumbnail
         exif_data = get_exif_data(pil_img)
         lat, lon = get_lat_lon_from_exif(exif_data)
 
-        image = pil_img.convert("RGB")
+        # Work on a copy for display / YOLO
+        image = pil_img.copy()
+
+        # Resize large images
         max_dim = 640
         if max(image.size) > max_dim:
             image.thumbnail((max_dim, max_dim))
 
+        # Coordinates info
         if lat is None or lon is None:
             st.error("No GPS coordinates found. Use a geotagged image.")
         else:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
 
+        # Convert to NumPy array for YOLO (avoids mode issues)
+        img_array = np.array(image)
+
         with st.spinner("Detecting road damage..."):
-            results = model(image, conf=conf_threshold)
+            results = model(img_array, conf=conf_threshold)
             detected_img_array = results[0].plot()
             detected_image = Image.fromarray(detected_img_array)
 
+        # --- SIDE BY SIDE VIEW ---
         col1, col2 = st.columns(2)
         with col1:
             st.image(image, caption="Original Image", use_container_width=True)
         with col2:
-            st.image(detected_image.convert("BGR"), caption="Detected Road Damage", use_container_width=True)
+            st.image(detected_image, caption="Detected Road Damage", use_container_width=True)
 
+        # Save to MongoDB
         boxes = results[0].boxes
         damage_count = len(boxes)
-        avg_conf = float(boxes.conf.mean().item()) if damage_count > 0 else 0.0
+        if damage_count > 0:
+            mean_conf = boxes.conf.mean()
+            avg_conf = float(mean_conf.item()) if hasattr(mean_conf, "item") else float(mean_conf)
+        else:
+            avg_conf = 0.0
 
         record = {
             "filename": uploaded_file.name,
@@ -134,6 +150,7 @@ if uploaded_file:
         save_detection(record)
         st.success(f"Saved to MongoDB (Damage: {damage_count}, Avg Conf: {avg_conf:.3f})")
 
+        # Map
         if lat is not None and lon is not None:
             st.subheader("Map View of Detected Damage")
             G = nx.Graph()
