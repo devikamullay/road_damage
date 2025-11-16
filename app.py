@@ -108,28 +108,29 @@ st.title("Road Damage Detection & Visualisation")
 
 if uploaded_file:
     try:
-        # Always open + convert strictly to RGB
-        pil_img = Image.open(uploaded_file).convert("RGB")
+        # 1) Open original image (do NOT convert yet)
+        original_img = Image.open(uploaded_file)
 
-        # Extract EXIF BEFORE thumbnail
-        exif_data = get_exif_data(pil_img)
+        # 2) Extract EXIF / GPS from the *original* image
+        exif_data = get_exif_data(original_img)
         lat, lon = get_lat_lon_from_exif(exif_data)
 
-        # Work on a copy for display / YOLO
+        # 3) Now make an RGB copy for YOLO + display
+        pil_img = original_img.convert("RGB")
         image = pil_img.copy()
 
-        # Resize large images
+        # 4) Resize large images
         max_dim = 640
         if max(image.size) > max_dim:
             image.thumbnail((max_dim, max_dim))
 
-        # Coordinates info
+        # 5) Show coord info
         if lat is None or lon is None:
             st.error("No GPS coordinates found. Use a geotagged image.")
         else:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
 
-        # Convert to NumPy array for YOLO (avoids mode issues)
+        # 6) Convert to NumPy array for YOLO
         img_array = np.array(image)
 
         with st.spinner("Detecting road damage..."):
