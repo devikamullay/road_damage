@@ -28,3 +28,12 @@ def init_db():
 def save_detection(record: dict):
     """Insert record into MongoDB."""
     detections_collection.insert_one(record)
+
+
+def get_all_detections():
+    """
+    Return all detection records from MongoDB as a list of dicts,
+    with Mongo's internal _id field removed.
+    """
+    return list(detections_collection.find({}, {"_id": 0}))
+
