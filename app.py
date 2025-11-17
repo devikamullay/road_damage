@@ -6,9 +6,11 @@ import folium
 from streamlit_folium import st_folium
 import networkx as nx
 from datetime import datetime
+import pandas as pd
+
 
 # MongoDB functions
-from db_models import init_db, save_detection
+from db_models import init_db, save_detection, get_all_detections
 
 # Test MongoDB connectivity
 init_db()
@@ -168,9 +170,7 @@ if uploaded_file:
 
         # Map
         if lat is not None and lon is not None:
-            st.subheader("Map View of Detected Damage")
-            G = nx.Graph()
-            G.add_node("damage_location", pos=(lon, lat))
+            st.subheader("Map View of This Detection")
             m = folium.Map(location=[lat, lon], zoom_start=18, tiles="OpenStreetMap")
             folium.Marker(
                 location=[lat, lon],
@@ -179,6 +179,56 @@ if uploaded_file:
                 icon=folium.Icon(icon="warning")
             ).add_to(m)
             st_folium(m, width=700, height=500)
+
+
+        # Accumulated map of ALL detections
+        # ----------------------------
+        st.subheader("Accumulated Map of All Detected Damage")
+
+        try:
+            all_records = get_all_detections()
+        except Exception as e:
+            st.error(f"Failed to load past detections: {e}")
+            all_records = []
+
+        if all_records:
+            df = pd.DataFrame(all_records)
+
+            # keep only rows with valid coordinates
+            if {"lat", "lon"}.issubset(df.columns):
+                df = df.dropna(subset=["lat", "lon"])
+
+                if not df.empty:
+                    center_lat = df["lat"].mean()
+                    center_lon = df["lon"].mean()
+
+                    m_all = folium.Map(
+                        location=[center_lat, center_lon],
+                        zoom_start=10,
+                        tiles="OpenStreetMap"
+                    )
+
+                    for _, row in df.iterrows():
+                        popup_text = (
+                            f"File: {row.get('filename', 'N/A')}<br>"
+                            f"Damage count: {row.get('damage_count', 'N/A')}<br>"
+                            f"Avg conf: {row.get('avg_conf', 'N/A')}"
+                        )
+
+                        folium.CircleMarker(
+                            location=[row["lat"], row["lon"]],
+                            radius=5,
+                            popup=popup_text,
+                            tooltip="Damage",
+                        ).add_to(m_all)
+
+                    st_folium(m_all, width=700, height=500)
+                else:
+                    st.info("No detections with valid coordinates yet.")
+            else:
+                st.info("No latitude/longitude fields found in database.")
+        else:
+            st.info("No past detections in database yet.")
 
     except Exception as e:
         st.error(f"Processing failed: {e}")
