@@ -15,6 +15,17 @@ init_db()
 
 st.set_page_config(page_title="Road Damage Detection", layout="wide")
 
+# ----------------------------
+# Session state init
+# ----------------------------
+if "current_detection" not in st.session_state:
+    # will hold last detection results so we don't recompute on every rerun
+    st.session_state["current_detection"] = None
+
+if "saved_keys" not in st.session_state:
+    # track which files (with given threshold) we've already saved to DB this session
+    st.session_state["saved_keys"] = set()
+
 
 # ----------------------------
 # Helper functions for EXIF / GPS
@@ -26,7 +37,6 @@ def get_exif_data(img: Image.Image):
     containing at least the GPSInfo block (if present).
     If the image has no EXIF or _getexif, return None.
     """
-    # Some formats (e.g. PNG) don't have _getexif at all
     if not hasattr(img, "_getexif"):
         return None
 
@@ -113,35 +123,88 @@ st.title("Road Damage Detection & Visualisation")
 # ----------------------------
 if uploaded_file:
     try:
-        # 1) Open original image (do NOT convert yet)
-        original_img = Image.open(uploaded_file)
+        # Unique key for this file + threshold in this session
+        file_key = f"{uploaded_file.name}_{uploaded_file.size}_{conf_threshold}"
 
-        # 2) Extract EXIF / GPS from the *original* image
-        exif_data = get_exif_data(original_img)
-        lat, lon = get_lat_lon_from_exif(exif_data)
+        # Decide whether we need to recompute detection
+        need_recompute = (
+            st.session_state["current_detection"] is None
+            or st.session_state["current_detection"]["file_key"] != file_key
+        )
 
-        # 3) Now make an RGB copy for YOLO + display
-        pil_img = original_img.convert("RGB")
-        image = pil_img.copy()
+        if need_recompute:
+            # 1) Open original image (do NOT convert yet)
+            original_img = Image.open(uploaded_file)
 
-        # 4) Resize large images for display
-        max_dim = 640
-        if max(image.size) > max_dim:
-            image.thumbnail((max_dim, max_dim))
+            # 2) Extract EXIF / GPS from the *original* image
+            exif_data = get_exif_data(original_img)
+            lat, lon = get_lat_lon_from_exif(exif_data)
 
-        # 5) Show coord info
+            # 3) Now make an RGB copy for YOLO + display
+            pil_img = original_img.convert("RGB")
+            image = pil_img.copy()
+
+            # 4) Resize large images for display
+            max_dim = 640
+            if max(image.size) > max_dim:
+                image.thumbnail((max_dim, max_dim))
+
+            # 5) Detection using YOLO (only once per file+threshold)
+            img_array = np.array(image)
+
+            with st.spinner("Detecting road damage..."):
+                results = model(img_array, conf=conf_threshold)
+                detected_img_array = results[0].plot()  # numpy array
+
+            boxes = results[0].boxes
+            damage_count = len(boxes)
+            if damage_count > 0:
+                mean_conf = boxes.conf.mean()
+                avg_conf = float(mean_conf.item()) if hasattr(mean_conf, "item") else float(mean_conf)
+            else:
+                avg_conf = 0.0
+
+            # Store everything in session_state so reruns reuse it
+            st.session_state["current_detection"] = {
+                "file_key": file_key,
+                "image": image,
+                "detected_image": detected_img_array,
+                "lat": lat,
+                "lon": lon,
+                "damage_count": damage_count,
+                "avg_conf": avg_conf,
+                "filename": uploaded_file.name,
+            }
+
+            # Save to MongoDB only once per file_key in this session
+            if file_key not in st.session_state["saved_keys"]:
+                record = {
+                    "filename": uploaded_file.name,
+                    "lat": lat,
+                    "lon": lon,
+                    "damage_count": damage_count,
+                    "avg_conf": avg_conf,
+                    "timestamp": datetime.utcnow(),
+                }
+                save_detection(record)
+                st.session_state["saved_keys"].add(file_key)
+                st.success(f"Saved to MongoDB (Damage: {damage_count}, Avg Conf: {avg_conf:.3f})")
+            else:
+                st.info("This detection was already saved in this session.")
+        # ---- Use cached detection on rerun ----
+        det = st.session_state["current_detection"]
+        image = det["image"]
+        detected_image = det["detected_image"]
+        lat = det["lat"]
+        lon = det["lon"]
+        damage_count = det["damage_count"]
+        avg_conf = det["avg_conf"]
+
+        # Show coord info
         if lat is None or lon is None:
             st.error("No GPS coordinates found. Use a geotagged image.")
         else:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
-
-        # 6) Detection using YOLO
-        img_array = np.array(image)
-
-        with st.spinner("Detecting road damage..."):
-            results = model(img_array, conf=conf_threshold)
-            detected_img_array = results[0].plot()
-            detected_image = detected_img_array  # numpy array is fine for st.image
 
         # --- SIDE BY SIDE VIEW ---
         col1, col2 = st.columns(2)
@@ -149,27 +212,6 @@ if uploaded_file:
             st.image(image, caption="Original Image", use_container_width=True)
         with col2:
             st.image(detected_image, caption="Detected Road Damage", use_container_width=True)
-
-        # Save to MongoDB
-        boxes = results[0].boxes
-        damage_count = len(boxes)
-        if damage_count > 0:
-            mean_conf = boxes.conf.mean()
-            avg_conf = float(mean_conf.item()) if hasattr(mean_conf, "item") else float(mean_conf)
-        else:
-            avg_conf = 0.0
-
-        record = {
-            "filename": uploaded_file.name,
-            "lat": lat,
-            "lon": lon,
-            "damage_count": damage_count,
-            "avg_conf": avg_conf,
-            "timestamp": datetime.utcnow(),
-        }
-
-        save_detection(record)
-        st.success(f"Saved to MongoDB (Damage: {damage_count}, Avg Conf: {avg_conf:.3f})")
 
         # Map for THIS detection
         if lat is not None and lon is not None:
