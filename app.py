@@ -133,12 +133,11 @@ if uploaded_file:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
 
         # 6) Convert to NumPy array for YOLO
-        img_array = np.array(image)
+
 
         with st.spinner("Detecting road damage..."):
-            results = model(img_array, conf=conf_threshold)
-            detected_img_array = results[0].plot()
-            detected_image = Image.fromarray(detected_img_array)
+            results = model(image, conf=conf_threshold)
+            detected_image = results[0].plot()
 
         # --- SIDE BY SIDE VIEW ---
         col1, col2 = st.columns(2)
