@@ -118,7 +118,7 @@ if uploaded_file:
         lat, lon = get_lat_lon_from_exif(exif_data)
 
         # 3) Now make an RGB copy for YOLO + display
-        pil_img = original_img.convert("RGB")
+        pil_img = original_img
         image = pil_img.copy()
 
         # 4) Resize large images
