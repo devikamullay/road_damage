@@ -203,7 +203,7 @@ if uploaded_file:
 
                     m_all = folium.Map(
                         location=[center_lat, center_lon],
-                        zoom_start=10,
+                        zoom_start=15,
                         tiles="OpenStreetMap"
                     )
 
