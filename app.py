@@ -268,6 +268,10 @@ if all_records:
                     radius=8,
                     popup=popup_text,
                     tooltip="Damage",
+                    color="red",            # outline
+                    fill=True,
+                    fill_color="red",       # fill
+                    fill_opacity=0.8
                 ).add_to(m_all)
 
             st_folium(m_all, width=700, height=500)
