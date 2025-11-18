@@ -4,10 +4,8 @@ from ultralytics import YOLO
 from PIL import Image, ExifTags
 import folium
 from streamlit_folium import st_folium
-import networkx as nx
 from datetime import datetime
 import pandas as pd
-
 
 # MongoDB functions
 from db_models import init_db, save_detection, get_all_detections
@@ -21,7 +19,6 @@ st.set_page_config(page_title="Road Damage Detection", layout="wide")
 # ----------------------------
 # Helper functions for EXIF / GPS
 # ----------------------------
-
 
 def get_exif_data(img: Image.Image):
     """
@@ -61,6 +58,7 @@ def _convert_to_degrees(value):
         except Exception:
             num, den = x
             return num / den
+
     seq = list(value)
     d, m, s = seq
     return to_float(d) + (to_float(m) / 60.0) + (to_float(s) / 3600.0)
@@ -69,6 +67,7 @@ def _convert_to_degrees(value):
 def get_lat_lon_from_exif(exif_data):
     if not exif_data or "GPSInfo" not in exif_data:
         return None, None
+
     gps_info = exif_data["GPSInfo"]
     gps_lat = gps_info.get("GPSLatitude")
     gps_lat_ref = gps_info.get("GPSLatitudeRef")
@@ -85,6 +84,7 @@ def get_lat_lon_from_exif(exif_data):
     lon = _convert_to_degrees(gps_lon)
     if gps_lon_ref != "E":
         lon = -lon
+
     return lat, lon
 
 
@@ -108,6 +108,9 @@ conf_threshold = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.5)
 
 st.title("Road Damage Detection & Visualisation")
 
+# ----------------------------
+# Per-image detection + single-point map
+# ----------------------------
 if uploaded_file:
     try:
         # 1) Open original image (do NOT convert yet)
@@ -118,10 +121,10 @@ if uploaded_file:
         lat, lon = get_lat_lon_from_exif(exif_data)
 
         # 3) Now make an RGB copy for YOLO + display
-        pil_img = original_img.convert("BGR")
+        pil_img = original_img.convert("RGB")
         image = pil_img.copy()
 
-        # 4) Resize large images
+        # 4) Resize large images for display
         max_dim = 640
         if max(image.size) > max_dim:
             image.thumbnail((max_dim, max_dim))
@@ -133,10 +136,12 @@ if uploaded_file:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
 
         # 6) Detection using YOLO
+        img_array = np.array(image)
 
         with st.spinner("Detecting road damage..."):
-            results = model(image, conf=conf_threshold)
-            detected_image = results[0].plot()
+            results = model(img_array, conf=conf_threshold)
+            detected_img_array = results[0].plot()
+            detected_image = detected_img_array  # numpy array is fine for st.image
 
         # --- SIDE BY SIDE VIEW ---
         col1, col2 = st.columns(2)
@@ -166,7 +171,7 @@ if uploaded_file:
         save_detection(record)
         st.success(f"Saved to MongoDB (Damage: {damage_count}, Avg Conf: {avg_conf:.3f})")
 
-        # Map
+        # Map for THIS detection
         if lat is not None and lon is not None:
             st.subheader("Map View of This Detection")
             m = folium.Map(location=[lat, lon], zoom_start=18, tiles="OpenStreetMap")
@@ -178,55 +183,55 @@ if uploaded_file:
             ).add_to(m)
             st_folium(m, width=700, height=500)
 
-
-        # Accumulated map of ALL detections
-        # ----------------------------
-        st.subheader("Accumulated Map of All Detected Damage")
-
-        try:
-            all_records = get_all_detections()
-        except Exception as e:
-            st.error(f"Failed to load past detections: {e}")
-            all_records = []
-
-        if all_records:
-            df = pd.DataFrame(all_records)
-
-            # keep only rows with valid coordinates
-            if {"lat", "lon"}.issubset(df.columns):
-                df = df.dropna(subset=["lat", "lon"])
-
-                if not df.empty:
-                    center_lat = df["lat"].mean()
-                    center_lon = df["lon"].mean()
-
-                    m_all = folium.Map(
-                        location=[center_lat, center_lon],
-                        zoom_start=12,
-                        tiles="OpenStreetMap"
-                    )
-
-                    for _, row in df.iterrows():
-                        popup_text = (
-                            f"File: {row.get('filename', 'N/A')}<br>"
-                            f"Damage count: {row.get('damage_count', 'N/A')}<br>"
-                            f"Avg conf: {row.get('avg_conf', 'N/A')}"
-                        )
-
-                        folium.CircleMarker(
-                            location=[row["lat"], row["lon"]],
-                            radius=8,
-                            popup=popup_text,
-                            tooltip="Damage",
-                        ).add_to(m_all)
-
-                    st_folium(m_all, width=700, height=500)
-                else:
-                    st.info("No detections with valid coordinates yet.")
-            else:
-                st.info("No latitude/longitude fields found in database.")
-        else:
-            st.info("No past detections in database yet.")
-
     except Exception as e:
         st.error(f"Processing failed: {e}")
+
+# ----------------------------
+# Accumulated map of ALL detections (outside if uploaded_file)
+# ----------------------------
+st.subheader("Accumulated Map of All Detected Damage")
+
+try:
+    all_records = get_all_detections()
+except Exception as e:
+    st.error(f"Failed to load past detections: {e}")
+    all_records = []
+
+if all_records:
+    df = pd.DataFrame(all_records)
+
+    # keep only rows with valid coordinates
+    if {"lat", "lon"}.issubset(df.columns):
+        df = df.dropna(subset=["lat", "lon"])
+
+        if not df.empty:
+            center_lat = df["lat"].mean()
+            center_lon = df["lon"].mean()
+
+            m_all = folium.Map(
+                location=[center_lat, center_lon],
+                zoom_start=12,
+                tiles="OpenStreetMap"
+            )
+
+            for _, row in df.iterrows():
+                popup_text = (
+                    f"File: {row.get('filename', 'N/A')}<br>"
+                    f"Damage count: {row.get('damage_count', 'N/A')}<br>"
+                    f"Avg conf: {row.get('avg_conf', 'N/A')}"
+                )
+
+                folium.CircleMarker(
+                    location=[row["lat"], row["lon"]],
+                    radius=8,
+                    popup=popup_text,
+                    tooltip="Damage",
+                ).add_to(m_all)
+
+            st_folium(m_all, width=700, height=500)
+        else:
+            st.info("No detections with valid coordinates yet.")
+    else:
+        st.info("No latitude/longitude fields found in database.")
+else:
+    st.info("No past detections in database yet.")
