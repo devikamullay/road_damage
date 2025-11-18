@@ -118,7 +118,7 @@ if uploaded_file:
         lat, lon = get_lat_lon_from_exif(exif_data)
 
         # 3) Now make an RGB copy for YOLO + display
-        pil_img = original_img.convert("RGB")
+        pil_img = original_img.convert("BGR")
         image = pil_img.copy()
 
         # 4) Resize large images
@@ -132,8 +132,7 @@ if uploaded_file:
         else:
             st.success(f"Image coordinates: {lat:.6f}, {lon:.6f}")
 
-        # 6) Convert to NumPy array for YOLO
-
+        # 6) Detection using YOLO
 
         with st.spinner("Detecting road damage..."):
             results = model(image, conf=conf_threshold)
@@ -203,7 +202,7 @@ if uploaded_file:
 
                     m_all = folium.Map(
                         location=[center_lat, center_lon],
-                        zoom_start=15,
+                        zoom_start=12,
                         tiles="OpenStreetMap"
                     )
 
@@ -216,7 +215,7 @@ if uploaded_file:
 
                         folium.CircleMarker(
                             location=[row["lat"], row["lon"]],
-                            radius=5,
+                            radius=8,
                             popup=popup_text,
                             tooltip="Damage",
                         ).add_to(m_all)
