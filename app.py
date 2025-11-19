@@ -64,52 +64,47 @@ def get_exif_data(img: Image.Image):
 def _convert_to_degrees(value):
     """
     Convert EXIF GPS coordinates to decimal degrees.
-    Handles both:
-    - classic ((num, den), (num, den), (num, den)) format
-    - IFDRational objects (Pillow) or mixes of both
+    Handles:
+    - (num, den) tuples
+    - IFDRational objects
+    - plain numbers
+    - and avoids division-by-zero.
     """
 
     def to_float(x):
-        # Already plain number
+        # Already a simple number
         if isinstance(x, (int, float)):
             return float(x)
 
-        # IFDRational-like object: has numerator/denominator attributes
+        # IFDRational-like object
         if hasattr(x, "numerator") and hasattr(x, "denominator"):
-            return float(x.numerator) / float(x.denominator)
+            num = float(x.numerator)
+            den = float(x.denominator) if x.denominator not in (0, None) else 1.0
+            return num / den
 
-        # Tuple/list like (num, den)
+        # (num, den) tuple/list
         if isinstance(x, (tuple, list)) and len(x) == 2:
             num, den = x
-            return float(num) / float(den)
+            num = float(num)
+            den = float(den) if den not in (0, None) else 1.0
+            return num / den
 
-        # Fallback: try direct float conversion
-        return float(x)
+        # Fallback
+        try:
+            return float(x)
+        except Exception:
+            return 0.0  # last-resort fallback
 
-    # Some PIL versions give a sequence of 3 values (d, m, s),
-    # each of which may be IFDRational or (num, den).
-    # In weird cases it might be a single value.
+    # Some formats give a 3-element sequence (d, m, s), some are weird
     try:
         seq = list(value)
     except TypeError:
-        # Not iterable (single IFDRational) – treat as degrees directly
+        # Not iterable -> treat as a single degree value
         return to_float(value)
 
     if len(seq) == 3:
         d, m, s = seq
-        return to_float(d) + (to_float(m) / 60.0) + (to_float(s) / 3600.0)
-    elif len(seq) == 2:
-        # Rare: only degrees + minutes
-        d, m = seq
-        return to_float(d) + (to_float(m) / 60.0)
-    elif len(seq) == 1:
-        # Single value, treat as degrees
-        return to_float(seq[0])
-    else:
-        # Unexpected format – best effort
-        return to_float(seq[0])
-
-
+        return to_float(d)_
 
 def get_lat_lon_from_exif(exif_data):
     if not exif_data or "GPSInfo" not in exif_data:
