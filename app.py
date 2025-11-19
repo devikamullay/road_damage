@@ -64,47 +64,58 @@ def get_exif_data(img: Image.Image):
 def _convert_to_degrees(value):
     """
     Convert EXIF GPS coordinates to decimal degrees.
-    Handles:
-    - (num, den) tuples
-    - IFDRational objects
-    - plain numbers
-    - and avoids division-by-zero.
+    Expects:
+      - a sequence of 3 values (deg, min, sec), where each value is either:
+        * (num, den) tuple
+        * IFDRational-like object with numerator/denominator
+        * int/float
+      - or a single value (already in degrees).
+    Raises if the format is clearly broken instead of silently returning 0.
     """
 
     def to_float(x):
-        # Already a simple number
+        # simple numbers
         if isinstance(x, (int, float)):
             return float(x)
 
         # IFDRational-like object
         if hasattr(x, "numerator") and hasattr(x, "denominator"):
             num = float(x.numerator)
-            den = float(x.denominator) if x.denominator not in (0, None) else 1.0
+            den = float(x.denominator)
+            if den == 0:
+                raise ValueError("zero denominator in IFDRational")
             return num / den
 
-        # (num, den) tuple/list
+        # (num, den) tuple / list
         if isinstance(x, (tuple, list)) and len(x) == 2:
             num, den = x
             num = float(num)
-            den = float(den) if den not in (0, None) else 1.0
+            den = float(den)
+            if den == 0:
+                raise ValueError("zero denominator in tuple rational")
             return num / den
 
-        # Fallback
-        try:
-            return float(x)
-        except Exception:
-            return 0.0  # last-resort fallback
+        # unsupported type
+        raise TypeError(f"Unsupported GPS component type: {type(x)}")
 
-    # Some formats give a 3-element sequence (d, m, s), some are weird
+    # some cameras store a single rational = already degrees
     try:
         seq = list(value)
     except TypeError:
-        # Not iterable -> treat as a single degree value
         return to_float(value)
 
     if len(seq) == 3:
         d, m, s = seq
-        return to_float(d)
+        return to_float(d) + (to_float(m) / 60.0) + (to_float(s) / 3600.0)
+    elif len(seq) == 2:
+        d, m = seq
+        return to_float(d) + (to_float(m) / 60.0)
+    elif len(seq) == 1:
+        return to_float(seq[0])
+    else:
+        # weird length; use the first element if possible
+        return to_float(seq[0])
+
 
 def get_lat_lon_from_exif(exif_data):
     if not exif_data or "GPSInfo" not in exif_data:
@@ -116,18 +127,30 @@ def get_lat_lon_from_exif(exif_data):
     gps_lon = gps_info.get("GPSLongitude")
     gps_lon_ref = gps_info.get("GPSLongitudeRef")
 
-    if not gps_lat or not gps_lat_ref or not gps_lon or not gps_lon_ref:
+    if gps_lat is None or gps_lat_ref is None or gps_lon is None or gps_lon_ref is None:
         return None, None
 
-    lat = _convert_to_degrees(gps_lat)
-    if gps_lat_ref != "N":
+    # normalize bytes -> string
+    if isinstance(gps_lat_ref, bytes):
+        gps_lat_ref = gps_lat_ref.decode(errors="ignore")
+    if isinstance(gps_lon_ref, bytes):
+        gps_lon_ref = gps_lon_ref.decode(errors="ignore")
+
+    try:
+        lat = _convert_to_degrees(gps_lat)
+        lon = _convert_to_degrees(gps_lon)
+    except Exception:
+        # if EXIF values are broken, do NOT invent 0,0 – just say "no GPS"
+        return None, None
+
+    if gps_lat_ref and gps_lat_ref.upper() != "N":
         lat = -lat
 
-    lon = _convert_to_degrees(gps_lon)
-    if gps_lon_ref != "E":
+    if gps_lon_ref and gps_lon_ref.upper() != "E":
         lon = -lon
 
     return lat, lon
+
 
 
 # ----------------------------
