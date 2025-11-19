@@ -104,7 +104,7 @@ def _convert_to_degrees(value):
 
     if len(seq) == 3:
         d, m, s = seq
-        return to_float(d)_
+        return to_float(d)
 
 def get_lat_lon_from_exif(exif_data):
     if not exif_data or "GPSInfo" not in exif_data:
