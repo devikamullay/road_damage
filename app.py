@@ -325,7 +325,7 @@ if all_records:
                     tooltip="Damage",
                     color="red",            # outline
                     fill=True,
-                    fill_color="red",       # fill
+                    fill_color="black",       # fill
                     fill_opacity=0.8
                 ).add_to(m_all)
 
